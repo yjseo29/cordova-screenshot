@@ -9,16 +9,16 @@
 package com.darktalker.cordova.screenshot;
 
 import android.Manifest;
-import android.content.Intent;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.net.Uri;
-import android.os.Environment;
+import android.os.Build;
+import android.provider.MediaStore;
 import android.util.Base64;
-import android.view.TextureView;
 import android.view.View;
-import android.view.ViewGroup;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
@@ -28,9 +28,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 
 
 public class Screenshot extends CordovaPlugin {
@@ -65,61 +64,61 @@ public class Screenshot extends CordovaPlugin {
     private Bitmap getBitmap() {
         Bitmap bitmap = null;
 
-        boolean isCrosswalk = false;
-        try {
-            Class.forName("org.crosswalk.engine.XWalkWebViewEngine");
-            isCrosswalk = true;
-        } catch (Exception e) {
-        }
-
-        if (isCrosswalk) {
-            webView.getPluginManager().postMessage("captureXWalkBitmap", this);
-        } else {
-            View view = webView.getView();//.getRootView();
-            view.setDrawingCacheEnabled(true);
-            bitmap = Bitmap.createBitmap(view.getDrawingCache());
-            view.setDrawingCacheEnabled(false);
-        }
+        View view = webView.getView();//.getRootView();
+        view.setDrawingCacheEnabled(true);
+        bitmap = Bitmap.createBitmap(view.getDrawingCache());
+        view.setDrawingCacheEnabled(false);
 
         return bitmap;
     }
 
-    private void scanPhoto(String imageFileName) {
-        Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
-        File f = new File(imageFileName);
-        Uri contentUri = Uri.fromFile(f);
-        mediaScanIntent.setData(contentUri);
-        this.cordova.getActivity().sendBroadcast(mediaScanIntent);
-    }
-
     private void saveScreenshot(Bitmap bitmap, String format, String fileName, Integer quality) {
         try {
-            File folder = new File(Environment.getExternalStorageDirectory(), "Pictures");
-            if (!folder.exists()) {
-                folder.mkdirs();
+            final ContentValues values = new ContentValues();
+            String mimetype;
+            CompressFormat imgFormat = null;
+            if(format.equals("png")) {
+                mimetype = "image/png";
+                imgFormat = CompressFormat.PNG;
             }
-
-            File f = new File(folder, fileName + "." + format);
-
-            FileOutputStream fos = new FileOutputStream(f);
-            if (format.equals("png")) {
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
-            } else if (format.equals("jpg")) {
-                bitmap.compress(Bitmap.CompressFormat.JPEG, quality == null ? 100 : quality, fos);
+            else if(format.equals("jpg")) {
+                mimetype = "image/jpeg";
+                imgFormat = CompressFormat.JPEG;
             }
+            else throw new IOException("Format not recognized");
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, mimetype);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures");
+
+            final ContentResolver resolver = this.cordova.getActivity().getApplicationContext()
+                    .getContentResolver();
+
+            Uri uri;
+
             JSONObject jsonRes = new JSONObject();
-            jsonRes.put("filePath", f.getAbsolutePath());
-            PluginResult result = new PluginResult(PluginResult.Status.OK, jsonRes);
+            PluginResult result;
+
+            try {
+                uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if(uri == null)
+                    throw new IOException("Failed to create MediaStore record");
+                try(final OutputStream stream = resolver.openOutputStream(uri)){
+                    if(stream == null) throw new IOException("Failed to open output stream");
+                    if(!bitmap.compress(imgFormat, quality == null ? 100 : quality, stream))
+                        throw new IOException("Could not save bitmap");
+                }
+
+                jsonRes.put("filePath", uri.getPath());
+                result = new PluginResult(PluginResult.Status.OK, jsonRes);
+            } catch (IOException e) {
+                jsonRes.put("error", e.getMessage());
+                result = new PluginResult(PluginResult.Status.OK, jsonRes);
+            }
+
             mCallbackContext.sendPluginResult(result);
 
-            scanPhoto(f.getAbsolutePath());
-            fos.close();
-        } catch (JSONException e) {
+        } catch (JSONException | IOException e) {
             mCallbackContext.error(e.getMessage());
-
-        } catch (IOException e) {
-            mCallbackContext.error(e.getMessage());
-
         }
     }
 
@@ -144,12 +143,8 @@ public class Screenshot extends CordovaPlugin {
 
             jpeg_data = null;
 
-        } catch (JSONException e) {
-            mCallbackContext.error(e.getMessage());
-
         } catch (Exception e) {
             mCallbackContext.error(e.getMessage());
-
         }
     }
 
@@ -188,9 +183,9 @@ public class Screenshot extends CordovaPlugin {
         });
     }
 
-     public void getScreenshotAsURISync() throws JSONException{
+    public void getScreenshotAsURISync() throws JSONException{
         mQuality = (Integer) mArgs.get(0);
-        
+
         Runnable r = new Runnable(){
             @Override
             public void run() {
@@ -221,7 +216,7 @@ public class Screenshot extends CordovaPlugin {
         mArgs = args;
 
         if (action.equals("saveScreenshot")) {
-            if(PermissionHelper.hasPermission(this, PERMISSIONS[0])) {
+            if(Build.VERSION.SDK_INT >= 30 || PermissionHelper.hasPermission(this, PERMISSIONS[0])) {
                 saveScreenshot();
             } else {
                 PermissionHelper.requestPermissions(this, SAVE_SCREENSHOT_SEC, PERMISSIONS);
@@ -238,7 +233,7 @@ public class Screenshot extends CordovaPlugin {
         return false;
     }
 
-    public void onRequestPermissionResult(int requestCode, String[] permissions,
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                           int[] grantResults) throws JSONException
     {
         for(int r:grantResults)
@@ -249,11 +244,8 @@ public class Screenshot extends CordovaPlugin {
                 return;
             }
         }
-        switch(requestCode)
-        {
-            case SAVE_SCREENSHOT_SEC:
-                saveScreenshot();
-                break;
+        if (requestCode == SAVE_SCREENSHOT_SEC) {
+            saveScreenshot();
         }
     }
 
