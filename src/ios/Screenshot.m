@@ -32,20 +32,20 @@ CGFloat statusBarHeight()
 	UIGraphicsEndImageContext();
 
 	// cut the status bar from the screenshot
-	CGRect smallRect = CGRectMake (0,statusBarHeight()*img.scale,rect.size.width*img.scale,rect.size.height*img.scale);
- 
-	CGImageRef subImageRef = CGImageCreateWithImageInRect(img.CGImage, smallRect);
-	CGRect smallBounds = CGRectMake(0,0,CGImageGetWidth(subImageRef), CGImageGetHeight(subImageRef));
+//	CGRect smallRect = CGRectMake (0,statusBarHeight()*img.scale,rect.size.width*img.scale,rect.size.height*img.scale);
+//
+//	CGImageRef subImageRef = CGImageCreateWithImageInRect(img.CGImage, smallRect);
+//	CGRect smallBounds = CGRectMake(0,0,CGImageGetWidth(subImageRef), CGImageGetHeight(subImageRef));
+//
+//	UIGraphicsBeginImageContext(smallBounds.size);
+//	CGContextRef context = UIGraphicsGetCurrentContext();
+//	CGContextDrawImage(context,smallBounds,subImageRef);
+//	UIImage* cropped = [UIImage imageWithCGImage:subImageRef];
+//	UIGraphicsEndImageContext();
+//
+//	CGImageRelease(subImageRef);
 
-	UIGraphicsBeginImageContext(smallBounds.size);
-	CGContextRef context = UIGraphicsGetCurrentContext();
-	CGContextDrawImage(context,smallBounds,subImageRef);
-	UIImage* cropped = [UIImage imageWithCGImage:subImageRef];
-	UIGraphicsEndImageContext();  
-
-	CGImageRelease(subImageRef);
-
-	return cropped;
+	return img;
 }
 
 - (void)saveScreenshot:(CDVInvokedUrlCommand*)command
